@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>QSYZM — Zero Knowledge Cipher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet"/>
+<style>
+  /* ── Variables ─────────────────────────────────────────────────── */
+  :root {
+    --bg:        #040608;
+    --surface:   #080d12;
+    --panel:     #0b1219;
+    --border:    #0e2030;
+    --grid-line: #0a1a26;
+    --text:      #7eb8d4;
+    --text-dim:  #2d5a72;
+    --text-bright: #b8dff0;
+    --accent:    #00c8ff;
+    --accent2:   #00ff9d;
+    --accent3:   #ff4d6d;
+    --warn:      #ffae00;
+    --glow:      rgba(0,200,255,0.12);
+    --glow-strong: rgba(0,200,255,0.3);
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Orbitron', sans-serif;
+  }
+
+  /* ── Reset ─────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  /* ── Scanline overlay ───────────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Animated grid background ───────────────────────────────────── */
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.5;
+    pointer-events: none;
+    animation: gridDrift 60s linear infinite;
+  }
+  @keyframes gridDrift {
+    from { background-position: 0 0; }
+    to   { background-position: 40px 40px; }
+  }
+
+  /* Radial vignette */
+  .bg-vignette {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 80% at 50% 50%, transparent 40%, #000 100%);
+    pointer-events: none;
+  }
+
+  /* ── Layout ─────────────────────────────────────────────────────── */
+  .shell {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────── */
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+    animation: fadeDown 0.8s ease both;
+  }
+
+  .logo {
+    font-family: var(--font-display);
+    font-size: clamp(36px, 8vw, 72px);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-shadow:
+      0 0 20px var(--accent),
+      0 0 60px rgba(0,200,255,0.4),
+      0 0 120px rgba(0,200,255,0.15);
+    position: relative;
+    display: inline-block;
+  }
+
+  .logo::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    color: var(--accent);
+    opacity: 0;
+    animation: glitch 6s infinite;
+    clip-path: polygon(0 30%, 100% 30%, 100% 50%, 0 50%);
+    transform: translateX(-3px);
+    filter: hue-rotate(90deg);
+  }
+
+  @keyframes glitch {
+    0%, 92%, 100% { opacity: 0; }
+    93%  { opacity: 0.7; transform: translateX(-3px); }
+    94%  { opacity: 0.7; transform: translateX(3px); }
+    95%  { opacity: 0; }
+    97%  { opacity: 0.5; transform: translateX(-2px); }
+    98%  { opacity: 0; }
+  }
+
+  .tagline {
+    margin-top: 8px;
+    font-size: 11px;
+    letter-spacing: 0.35em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 16px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    box-shadow: 0 0 6px var(--accent2);
+    animation: pulse 2s ease infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Panel / Card ───────────────────────────────────────────────── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.6;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .panel-header .icon {
+    color: var(--accent);
+    font-size: 14px;
+  }
+
+  .panel-body { padding: 20px 18px; }
+
+  /* ── Section labels ─────────────────────────────────────────────── */
+  .field-label {
+    font-size: 9px;
+    letter-spacing: 0.4em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .field-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Inputs ─────────────────────────────────────────────────────── */
+  textarea, input[type="password"] {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-bright);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 12px 14px;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    caret-color: var(--accent);
+  }
+
+  textarea { min-height: 110px; line-height: 1.6; }
+  input[type="password"] { letter-spacing: 0.15em; }
+
+  textarea:focus, input[type="password"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), inset 0 0 20px rgba(0,200,255,0.03);
+  }
+
+  textarea::placeholder, input::placeholder {
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Route Grid ─────────────────────────────────────────────────── */
+  .route-grid-wrap {
+    margin: 20px 0;
+  }
+
+  .route-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+  }
+  .route-display .route-value {
+    font-family: var(--font-display);
+    font-size: 20px;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-shadow: 0 0 12px var(--accent);
+    min-width: 60px;
+  }
+  .route-display .route-value.incomplete {
+    color: var(--text-dim);
+    text-shadow: none;
+  }
+
+  .layer-labels {
+    display: grid;
+    grid-template-columns: 70px repeat(5, 1fr);
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  .layer-label-spacer { /* empty */ }
+  .booth-label {
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+  }
+
+  .route-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .grid-row {
+    display: grid;
+    grid-template-columns: 70px repeat(5, 1fr);
+    gap: 4px;
+    align-items: center;
+  }
+
+  .layer-tag {
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--text-dim);
+    text-align: right;
+    padding-right: 10px;
+    text-transform: uppercase;
+  }
+
+  .booth-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-dim);
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 10px 4px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+    letter-spacing: 0.05em;
+  }
+
+  .booth-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .booth-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 8px rgba(0,200,255,0.2);
+  }
+
+  .booth-btn.selected {
+    background: rgba(0,200,255,0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow:
+      0 0 12px rgba(0,200,255,0.25),
+      inset 0 0 12px rgba(0,200,255,0.05);
+    font-weight: 900;
+  }
+
+  .booth-btn.selected::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  /* Layer accent colors */
+  .grid-row:nth-child(1) .booth-btn.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0,200,255,0.06);
+    box-shadow: 0 0 12px rgba(0,200,255,0.2), inset 0 0 10px rgba(0,200,255,0.04);
+  }
+  .grid-row:nth-child(1) .booth-btn.selected::after { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  .grid-row:nth-child(2) .booth-btn.selected {
+    border-color: var(--accent2);
+    color: var(--accent2);
+    background: rgba(0,255,157,0.06);
+    box-shadow: 0 0 12px rgba(0,255,157,0.2), inset 0 0 10px rgba(0,255,157,0.04);
+  }
+  .grid-row:nth-child(2) .booth-btn.selected::after { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .grid-row:nth-child(2) .booth-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  .grid-row:nth-child(3) .booth-btn.selected {
+    border-color: var(--warn);
+    color: var(--warn);
+    background: rgba(255,174,0,0.06);
+    box-shadow: 0 0 12px rgba(255,174,0,0.2), inset 0 0 10px rgba(255,174,0,0.04);
+  }
+  .grid-row:nth-child(3) .booth-btn.selected::after { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+  .grid-row:nth-child(3) .booth-btn:hover { border-color: var(--warn); color: var(--warn); }
+
+  /* ── Action Buttons ─────────────────────────────────────────────── */
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .btn {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    padding: 14px 20px;
+    border-radius: 3px;
+    border: 1px solid;
+    cursor: pointer;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 0; height: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease, height 0.4s ease, opacity 0.4s;
+    opacity: 0;
+  }
+
+  .btn:active::before {
+    width: 300px; height: 300px;
+    opacity: 0.1;
+  }
+
+  .btn-encrypt {
+    background: rgba(0,200,255,0.06);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .btn-encrypt::before { background: var(--accent); }
+  .btn-encrypt:hover {
+    background: rgba(0,200,255,0.14);
+    box-shadow: 0 0 20px rgba(0,200,255,0.25), inset 0 0 20px rgba(0,200,255,0.05);
+    transform: translateY(-1px);
+  }
+  .btn-encrypt:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+  .btn-decrypt {
+    background: rgba(0,255,157,0.04);
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+  .btn-decrypt::before { background: var(--accent2); }
+  .btn-decrypt:hover {
+    background: rgba(0,255,157,0.1);
+    box-shadow: 0 0 20px rgba(0,255,157,0.2), inset 0 0 20px rgba(0,255,157,0.04);
+    transform: translateY(-1px);
+  }
+  .btn-decrypt:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+  /* Loading state */
+  .btn.loading {
+    pointer-events: none;
+    opacity: 0.6;
+  }
+  .btn.loading::after {
+    content: '';
+    display: inline-block;
+    width: 10px; height: 10px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    margin-left: 8px;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Output Panel ───────────────────────────────────────────────── */
+  .output-panel {
+    margin-top: 16px;
+    animation: fadeDown 0.4s ease both;
+  }
+
+  .output-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 14px;
+    position: relative;
+    min-height: 80px;
+    transition: border-color 0.3s;
+  }
+
+  .output-box.success { border-color: rgba(0,200,255,0.3); }
+  .output-box.error   { border-color: rgba(255,77,109,0.4); }
+  .output-box.warning { border-color: rgba(255,174,0,0.4); }
+
+  .output-label {
+    font-size: 9px;
+    letter-spacing: 0.35em;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+  .output-label.success { color: var(--accent); }
+  .output-label.error   { color: var(--accent3); }
+  .output-label.warning { color: var(--warn); }
+
+  .output-text {
+    color: var(--text-bright);
+    word-break: break-all;
+    line-height: 1.7;
+    font-size: 12px;
+  }
+  .output-text.mono { font-family: var(--font-mono); }
+
+  .copy-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    padding: 4px 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--accent2); color: var(--accent2); }
+
+  /* ── Divider ────────────────────────────────────────────────────── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 24px 0;
+  }
+
+  /* ── Footer ─────────────────────────────────────────────────────── */
+  footer {
+    text-align: center;
+    margin-top: 60px;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  footer span { color: var(--accent3); }
+
+  /* ── Animations ─────────────────────────────────────────────────── */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel { animation: fadeDown 0.6s ease both; }
+  .panel:nth-child(2) { animation-delay: 0.1s; }
+  .panel:nth-child(3) { animation-delay: 0.2s; }
+
+  /* ── Responsive ─────────────────────────────────────────────────── */
+  @media (max-width: 560px) {
+    .booth-btn { font-size: 10px; padding: 9px 2px; }
+    .layer-tag { font-size: 8px; padding-right: 6px; }
+    .actions { grid-template-columns: 1fr; }
+    .logo { letter-spacing: 0.12em; }
+  }
+
+  /* ── Tooltip ────────────────────────────────────────────────────── */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0e1f2e;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-vignette"></div>
+
+<div class="shell">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header>
+    <div class="logo" data-text="QSYZM">QSYZM</div>
+    <div class="tagline">Zero — Knowledge — Cipher — System</div>
+    <div class="status-bar">
+      <span class="status-dot"></span>
+      <span>SYSTEM ONLINE</span>
+      <span style="margin: 0 8px; opacity:0.3">|</span>
+      <span>AES-256-GCM + XOR CASCADE</span>
+      <span style="margin: 0 8px; opacity:0.3">|</span>
+      <span>ZERO KNOWLEDGE</span>
+    </div>
+  </header>
+
+  <!-- ── Main Panel ───────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="icon">◈</span>
+      <span>Cipher Terminal</span>
+      <span style="margin-left:auto; font-size:9px; opacity:0.5">v1.0 // PHASE-1</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- Message -->
+      <div class="field-label">01 // Plaintext Message</div>
+      <textarea id="message"
+        placeholder="Enter message to encrypt, or paste token to decrypt…"
+        spellcheck="false"
+        autocomplete="off"></textarea>
+
+      <div class="divider"></div>
+
+      <!-- Password -->
+      <div class="field-label">02 // Access Key</div>
+      <input type="password" id="password"
+        placeholder="Passphrase for AES layer…"
+        autocomplete="new-password"/>
+
+      <div class="divider"></div>
+
+      <!-- Route Grid -->
+      <div class="field-label">03 // Route Selector — pick one booth per layer</div>
+
+      <div class="route-grid-wrap">
+        <div class="route-display">
+          <span>ACTIVE ROUTE:</span>
+          <span class="route-value incomplete" id="routeDisplay">—</span>
+          <span id="routeStatus" style="font-size:9px; letter-spacing:0.2em">SELECT 3 BOOTHS</span>
+        </div>
+
+        <!-- Column headers -->
+        <div class="layer-labels">
+          <div class="layer-label-spacer"></div>
+          <div class="booth-label">B-1</div>
+          <div class="booth-label">B-2</div>
+          <div class="booth-label">B-3</div>
+          <div class="booth-label">B-4</div>
+          <div class="booth-label">B-5</div>
+        </div>
+
+        <!-- Grid rows (3 layers × 5 booths) -->
+        <div class="route-grid" id="routeGrid">
+          <div class="grid-row" data-layer="0">
+            <div class="layer-tag">Layer 0</div>
+            <button class="booth-btn" data-layer="0" data-booth="1">1</button>
+            <button class="booth-btn" data-layer="0" data-booth="2">2</button>
+            <button class="booth-btn" data-layer="0" data-booth="3">3</button>
+            <button class="booth-btn" data-layer="0" data-booth="4">4</button>
+            <button class="booth-btn" data-layer="0" data-booth="5">5</button>
+          </div>
+          <div class="grid-row" data-layer="1">
+            <div class="layer-tag">Layer 1</div>
+            <button class="booth-btn" data-layer="1" data-booth="1">1</button>
+            <button class="booth-btn" data-layer="1" data-booth="2">2</button>
+            <button class="booth-btn" data-layer="1" data-booth="3">3</button>
+            <button class="booth-btn" data-layer="1" data-booth="4">4</button>
+            <button class="booth-btn" data-layer="1" data-booth="5">5</button>
+          </div>
+          <div class="grid-row" data-layer="2">
+            <div class="layer-tag">Layer 2</div>
+            <button class="booth-btn" data-layer="2" data-booth="1">1</button>
+            <button class="booth-btn" data-layer="2" data-booth="2">2</button>
+            <button class="booth-btn" data-layer="2" data-booth="3">3</button>
+            <button class="booth-btn" data-layer="2" data-booth="4">4</button>
+            <button class="booth-btn" data-layer="2" data-booth="5">5</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Actions -->
+      <div class="actions">
+        <button class="btn btn-encrypt" id="btnEncrypt" disabled>
+          ⟁ Encrypt
+        </button>
+        <button class="btn btn-decrypt" id="btnDecrypt" disabled>
+          ◎ Decrypt
+        </button>
+      </div>
+
+    </div><!-- /panel-body -->
+  </div><!-- /panel -->
+
+  <!-- ── Output ────────────────────────────────────────────── -->
+  <div class="output-panel" id="outputPanel" style="display:none">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="icon">▣</span>
+        <span id="outputTitle">Output</span>
+      </div>
+      <div class="panel-body">
+        <div class="output-box" id="outputBox">
+          <div class="output-label" id="outputLabel"></div>
+          <button class="copy-btn" id="copyBtn" style="display:none">copy</button>
+          <div class="output-text mono" id="outputText"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ────────────────────────────────────────────── -->
+  <footer>
+    QSYZM CIPHER SYSTEM // <span>ZERO KNOWLEDGE</span> // ROUTE &amp; PASSWORD NEVER STORED
+  </footer>
+
+</div><!-- /shell -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────
+const selected = { 0: null, 1: null, 2: null };
+
+// ── DOM refs ───────────────────────────────────────────────────────
+const msgEl        = document.getElementById('message');
+const pwEl         = document.getElementById('password');
+const routeDisplay = document.getElementById('routeDisplay');
+const routeStatus  = document.getElementById('routeStatus');
+const btnEncrypt   = document.getElementById('btnEncrypt');
+const btnDecrypt   = document.getElementById('btnDecrypt');
+const outputPanel  = document.getElementById('outputPanel');
+const outputBox    = document.getElementById('outputBox');
+const outputLabel  = document.getElementById('outputLabel');
+const outputText   = document.getElementById('outputText');
+const outputTitle  = document.getElementById('outputTitle');
+const copyBtn      = document.getElementById('copyBtn');
+
+// ── Route grid logic ───────────────────────────────────────────────
+document.getElementById('routeGrid').addEventListener('click', e => {
+  const btn = e.target.closest('.booth-btn');
+  if (!btn) return;
+
+  const layer = parseInt(btn.dataset.layer);
+  const booth = parseInt(btn.dataset.booth);
+
+  // Deselect same layer
+  document.querySelectorAll(`.booth-btn[data-layer="${layer}"]`)
+    .forEach(b => b.classList.remove('selected'));
+
+  // Toggle off if clicking the already-selected booth
+  if (selected[layer] === booth) {
+    selected[layer] = null;
+  } else {
+    selected[layer] = booth;
+    btn.classList.add('selected');
+  }
+
+  updateRouteDisplay();
+});
+
+function getRoute() {
+  if (selected[0] && selected[1] && selected[2]) {
+    return `${selected[0]}${selected[1]}${selected[2]}`;
+  }
+  return null;
+}
+
+function updateRouteDisplay() {
+  const r = getRoute();
+  if (r) {
+    routeDisplay.textContent = r;
+    routeDisplay.classList.remove('incomplete');
+    routeStatus.textContent = 'ROUTE LOCKED';
+    routeStatus.style.color = 'var(--accent2)';
+  } else {
+    const filled = [0,1,2].filter(l => selected[l] !== null).length;
+    routeDisplay.textContent = '—';
+    routeDisplay.classList.add('incomplete');
+    routeStatus.textContent = `SELECT ${3 - filled} MORE BOOTH${3-filled!==1?'S':''}`;
+    routeStatus.style.color = '';
+  }
+  validateForm();
+}
+
+// ── Form validation ────────────────────────────────────────────────
+function validateForm() {
+  const ready = getRoute() && msgEl.value.trim() && pwEl.value.trim();
+  btnEncrypt.disabled = !ready;
+  btnDecrypt.disabled = !ready;
+}
+
+msgEl.addEventListener('input', validateForm);
+pwEl.addEventListener('input', validateForm);
+
+// ── API calls ──────────────────────────────────────────────────────
+async function callAPI(endpoint, payload) {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+}
+
+function setLoading(btn, isLoading) {
+  btn.classList.toggle('loading', isLoading);
+  if (isLoading) {
+    btn.dataset.origText = btn.innerHTML;
+    btn.innerHTML = btn.innerHTML.replace(/⟁|◎/, '') + ' PROCESSING';
+  } else if (btn.dataset.origText) {
+    btn.innerHTML = btn.dataset.origText;
+  }
+}
+
+function showOutput({ type, label, text, copyable, title }) {
+  outputPanel.style.display = '';
+  outputTitle.textContent = title || 'Output';
+  outputBox.className = `output-box ${type}`;
+  outputLabel.className = `output-label ${type}`;
+  outputLabel.textContent = label;
+  outputText.textContent = text;
+  if (copyable) {
+    copyBtn.style.display = '';
+    copyBtn.textContent = 'copy';
+    copyBtn.classList.remove('copied');
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = 'copied';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.textContent = 'copy';
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      });
+    };
+  } else {
+    copyBtn.style.display = 'none';
+  }
+  outputPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Encrypt ────────────────────────────────────────────────────────
+btnEncrypt.addEventListener('click', async () => {
+  const route    = getRoute();
+  const message  = msgEl.value.trim();
+  const password = pwEl.value.trim();
+  if (!route || !message || !password) return;
+
+  setLoading(btnEncrypt, true);
+  btnDecrypt.disabled = true;
+
+  try {
+    const { ok, status, data } = await callAPI('/encrypt', { message, route, password });
+    if (ok) {
+      showOutput({
+        type: 'success',
+        title: 'Encrypted Token',
+        label: '✓ ENCRYPTION SUCCESSFUL // STORE TOKEN SECURELY',
+        text: data.token,
+        copyable: true,
+      });
+    } else {
+      showOutput({
+        type: 'error',
+        title: 'Encryption Failed',
+        label: `✗ ERROR ${status}`,
+        text: data.detail || 'Unexpected error occurred.',
+        copyable: false,
+      });
+    }
+  } catch (err) {
+    showOutput({
+      type: 'error',
+      title: 'Network Error',
+      label: '✗ CONNECTION FAILED',
+      text: 'Could not reach the Qsyzm server. Check your connection.',
+      copyable: false,
+    });
+  } finally {
+    setLoading(btnEncrypt, false);
+    validateForm();
+  }
+});
+
+// ── Decrypt ────────────────────────────────────────────────────────
+btnDecrypt.addEventListener('click', async () => {
+  const route    = getRoute();
+  const token    = msgEl.value.trim();
+  const password = pwEl.value.trim();
+  if (!route || !token || !password) return;
+
+  setLoading(btnDecrypt, true);
+  btnEncrypt.disabled = true;
+
+  try {
+    const { ok, status, data } = await callAPI('/decrypt', { token, route, password });
+    if (ok) {
+      showOutput({
+        type: 'success',
+        title: 'Decrypted Message',
+        label: '✓ DECRYPTION SUCCESSFUL // ZERO-KNOWLEDGE CONFIRMED',
+        text: data.message,
+        copyable: true,
+      });
+    } else if (status === 429) {
+      showOutput({
+        type: 'warning',
+        title: 'Rate Limited',
+        label: '⚠ ACCESS TEMPORARILY SUSPENDED',
+        text: data.detail || 'Too many failed attempts. Please wait before retrying.',
+        copyable: false,
+      });
+    } else {
+      showOutput({
+        type: 'error',
+        title: 'Decryption Failed',
+        label: `✗ AUTHENTICATION FAILURE // CODE ${status}`,
+        text: data.detail || 'Wrong route, password, or corrupted token.',
+        copyable: false,
+      });
+    }
+  } catch (err) {
+    showOutput({
+      type: 'error',
+      title: 'Network Error',
+      label: '✗ CONNECTION FAILED',
+      text: 'Could not reach the Qsyzm server. Check your connection.',
+      copyable: false,
+    });
+  } finally {
+    setLoading(btnDecrypt, false);
+    validateForm();
+  }
+});
+</script>
+</body>
+</html>
