@@ -1,4 +1,10 @@
+# Secret files
 .env
 .env.secrets
 *.secrets
+
+# Python internals
 __pycache__/
+*.pyc
+venv/
+.venv/
