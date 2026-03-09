@@ -9,6 +9,7 @@ Zero-Knowledge contract:
 """
 
 import logging
+import os
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -16,7 +17,8 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from engine import QsyzmEngine
@@ -120,6 +122,26 @@ app = FastAPI(
     # docs_url=None,
     # redoc_url=None,
 )
+
+# ---------------------------------------------------------------------------
+# Static files — serve index.html at the root URL
+# ---------------------------------------------------------------------------
+
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_STATIC_DIR = os.path.join(_BASE_DIR, "static")
+
+# Mount /static for any future CSS/JS/image assets
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def serve_frontend():
+    """Serve the Qsyzm single-page frontend."""
+    index_path = os.path.join(_BASE_DIR, "index.html")
+    if not os.path.exists(index_path):
+        return JSONResponse(status_code=404, content={"detail": "Frontend not found."})
+    return FileResponse(index_path, media_type="text/html")
 
 
 # ---------------------------------------------------------------------------
