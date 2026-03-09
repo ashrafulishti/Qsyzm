@@ -3,3 +3,4 @@ uvicorn[standard]==0.30.6
 cryptography==43.0.1
 python-dotenv==1.0.1
 pydantic==2.8.2
+pydantic-core==2.20.1
